@@ -1,0 +1,6 @@
+{
+  "name": "Utsav AI — Your Celebration, Perfectly Planned",
+  "description": "AI-powered celebration planner for Indian weddings, birthdays, and community events with deterministic budget engine and What-If replanner.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
