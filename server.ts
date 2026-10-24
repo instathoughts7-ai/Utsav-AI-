@@ -1,10 +1,11 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { generateEventPlan, handleWhatIfReplanning } from './src/server/geminiService';
 import { ALL_SAMPLE_EVENTS } from './src/data/sampleEvents';
 import { validateEventInput, hasPrototypePollution } from './src/utils/budgetEngine';
+import { EventInput, WhatIfScenarioInput } from './src/types/event';
 
 dotenv.config();
 
@@ -21,7 +22,7 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
 // Security: Standard protective HTTP headers
-app.use((_req: Request, res: Response, next: () => void) => {
+app.use((_req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -66,7 +67,7 @@ function getSecureClientIp(req: Request): string {
   return ip.replace(/^::ffff:/, ''); // Normalize IPv4-mapped IPv6
 }
 
-function apiRateLimiter(req: Request, res: Response, next: () => void) {
+function apiRateLimiter(req: Request, res: Response, next: NextFunction) {
   const clientIp = getSecureClientIp(req);
   const now = Date.now();
   const entry = rateLimitMap.get(clientIp);
@@ -90,7 +91,7 @@ function apiRateLimiter(req: Request, res: Response, next: () => void) {
   next();
 }
 
-function planRateLimiter(req: Request, res: Response, next: () => void) {
+function planRateLimiter(req: Request, res: Response, next: NextFunction) {
   const clientIp = getSecureClientIp(req);
   const now = Date.now();
   const entry = planRateLimitMap.get(clientIp);
@@ -128,7 +129,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Sample event retrieval endpoint
 app.get('/api/sample/:key', (req: Request, res: Response) => {
-  const key = req.params.key as string;
+  const key = String(req.params.key || '').trim().toLowerCase();
   const sample = ALL_SAMPLE_EVENTS[key] || ALL_SAMPLE_EVENTS['wedding'];
   res.json({ success: true, plan: sample });
 });
@@ -136,7 +137,7 @@ app.get('/api/sample/:key', (req: Request, res: Response) => {
 // Generate comprehensive event plan (guarded with stricter rate limiter & input sanitization)
 app.post('/api/plan', planRateLimiter, async (req: Request, res: Response) => {
   try {
-    const input = req.body;
+    const input = req.body as Partial<EventInput>;
 
     if (hasPrototypePollution(input)) {
       return res.status(400).json({
@@ -155,7 +156,7 @@ app.post('/api/plan', planRateLimiter, async (req: Request, res: Response) => {
       });
     }
 
-    const plan = await generateEventPlan(input);
+    const plan = await generateEventPlan(input as EventInput);
     return res.json({ success: true, plan });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Internal error';
@@ -171,7 +172,7 @@ app.post('/api/plan', planRateLimiter, async (req: Request, res: Response) => {
 // What-If Replanner simulation
 app.post('/api/replan', async (req: Request, res: Response) => {
   try {
-    const scenario = req.body;
+    const scenario = req.body as Partial<WhatIfScenarioInput>;
 
     if (hasPrototypePollution(scenario)) {
       return res.status(400).json({
@@ -180,7 +181,7 @@ app.post('/api/replan', async (req: Request, res: Response) => {
       });
     }
 
-    if (!scenario || !scenario.currentPlan || !scenario.newBudget || !scenario.newGuestCount) {
+    if (!scenario || !scenario.currentPlan || scenario.newBudget === undefined || scenario.newGuestCount === undefined) {
       return res.status(400).json({
         success: false,
         error: 'Invalid replanning parameters. Current plan, new budget, and new guest count are required.',
@@ -201,7 +202,7 @@ app.post('/api/replan', async (req: Request, res: Response) => {
       });
     }
 
-    const result = await handleWhatIfReplanning(scenario);
+    const result = await handleWhatIfReplanning(scenario as WhatIfScenarioInput);
     return res.json({ success: true, result });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Internal error';
@@ -246,7 +247,7 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
+startServer().catch((err: unknown) => {
   console.error('[Server startup failed]', err);
   process.exit(1);
 });
